@@ -1,0 +1,25 @@
+{
+  "name": "queueflow-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "QueueFlow - Smart Digital Queue Management System Monorepo",
+  "scripts": {
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "build:client": "npm run build --prefix client",
+    "build:server": "npm run build --prefix server",
+    "prisma:generate": "npm run prisma:generate --prefix server",
+    "prisma:migrate": "npm run prisma:migrate --prefix server"
+  },
+  "keywords": [
+    "queue-management",
+    "react",
+    "express",
+    "typescript",
+    "prisma",
+    "postgresql",
+    "tailwind"
+  ],
+  "author": "",
+  "license": "MIT"
+}

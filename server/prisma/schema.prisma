@@ -1,0 +1,475 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum RoleEnum {
+  SUPER_ADMIN
+  ORG_ADMIN
+  STAFF
+  CUSTOMER
+}
+
+enum TokenStatusEnum {
+  WAITING
+  CALLED
+  SERVING
+  COMPLETED
+  SKIPPED
+  CANCELLED
+}
+
+enum CounterStatusEnum {
+  OPEN
+  PAUSED
+  CLOSED
+  MAINTENANCE
+}
+
+enum QueueStatusEnum {
+  WAITING
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum PriorityLevelEnum {
+  NORMAL
+  SENIOR_CITIZEN
+  EMERGENCY
+  VIP
+}
+
+enum DayOfWeekEnum {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum NotificationChannelEnum {
+  SMS
+  EMAIL
+  PUSH
+  WHATSAPP
+}
+
+enum NotificationStatusEnum {
+  PENDING
+  SENT
+  FAILED
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  phone          String?
+  password       String
+  fullName       String
+  role           RoleEnum  @default(CUSTOMER)
+  isActive       Boolean   @default(true)
+  isDeleted      Boolean   @default(false)
+  deletedAt      DateTime?
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  refreshTokenHash String?
+  lastLoginAt      DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  staffProfile   StaffProfile?
+  tickets        Token[]
+  auditLogs      AuditLog[]
+
+  @@index([email])
+  @@index([organizationId, role])
+  @@map("users")
+}
+
+model Organization {
+  id          String    @id @default(uuid())
+  name        String
+  code        String    @unique
+  description String?
+  logoUrl     String?
+  isActive    Boolean   @default(true)
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  branches      Branch[]
+  users         User[]
+  staffProfiles StaffProfile[]
+  settings      OrganizationSetting?
+  auditLogs     AuditLog[]
+
+  @@index([code])
+  @@map("organizations")
+}
+
+model OrganizationSetting {
+  id                String       @id @default(uuid())
+  organizationId    String       @unique
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  maxTokensPerDay   Int          @default(500)
+  autoCallEnabled   Boolean      @default(false)
+  smsGatewayEnabled Boolean      @default(false)
+  smsApiKey         String?
+  themeColor        String?      @default("#0c8ce9")
+  customConfig      String?      // JSON string for dynamic options
+
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@map("organization_settings")
+}
+
+model Branch {
+  id             String       @id @default(uuid())
+  name           String
+  code           String
+  address        String?
+  phone          String?
+  timeZone       String       @default("UTC")
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  isActive       Boolean      @default(true)
+  isDeleted      Boolean      @default(false)
+  deletedAt      DateTime?
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  departments          Department[]
+  counters             Counter[]
+  queues               Queue[]
+  staffProfiles        StaffProfile[]
+  workingHours         WorkingHour[]
+  holidays             Holiday[]
+  auditLogs            AuditLog[]
+  dailyReportSummaries DailyReportSummary[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("branches")
+}
+
+model WorkingHour {
+  id             String        @id @default(uuid())
+  branchId       String
+  branch         Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  dayOfWeek      DayOfWeekEnum
+  openTime       String        // e.g. "08:00"
+  closeTime      String        // e.g. "17:00"
+  lunchStartTime String?       // e.g. "12:00"
+  lunchEndTime   String?       // e.g. "13:00"
+  isClosed       Boolean       @default(false)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([branchId, dayOfWeek])
+  @@map("working_hours")
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name        String
+  date        DateTime
+  description String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([branchId, date])
+  @@map("holidays")
+}
+
+model StaffProfile {
+  id             String       @id @default(uuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  departmentId   String?
+  department     Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  counterId      String?      @unique
+  counter        Counter?     @relation(fields: [counterId], references: [id], onDelete: SetNull)
+
+  employeeId     String?
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, branchId])
+  @@map("staff_profiles")
+}
+
+model Department {
+  id          String    @id @default(uuid())
+  name        String
+  code        String
+  description String?
+
+  branchId    String
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  isActive    Boolean   @default(true)
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  services      Service[]
+  staffProfiles StaffProfile[]
+
+  @@unique([branchId, code])
+  @@index([branchId])
+  @@map("departments")
+}
+
+model Service {
+  id                 String     @id @default(uuid())
+  name               String
+  code               String
+  description        String?
+  prefix             String     // e.g., "CARD", "REG"
+  avgServiceTimeMins Int        @default(10)
+
+  departmentId       String
+  department         Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  isActive           Boolean    @default(true)
+  isDeleted          Boolean    @default(false)
+  deletedAt          DateTime?
+
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  counterServices CounterService[]
+  queues          Queue[]
+  tickets         Token[]
+
+  @@unique([departmentId, code])
+  @@index([departmentId])
+  @@map("services")
+}
+
+model Counter {
+  id        String            @id @default(uuid())
+  number    Int
+  name      String            // e.g., "Counter 01"
+
+  branchId  String
+  branch    Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  status    CounterStatusEnum @default(CLOSED)
+  isActive  Boolean           @default(true)
+
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  staffProfile    StaffProfile?
+  counterServices CounterService[]
+  tickets         Token[]
+
+  @@unique([branchId, number])
+  @@index([branchId, status])
+  @@map("counters")
+}
+
+model CounterService {
+  id        String   @id @default(uuid())
+  counterId String
+  counter   Counter  @relation(fields: [counterId], references: [id], onDelete: Cascade)
+
+  serviceId String
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([counterId, serviceId])
+  @@map("counter_services")
+}
+
+model Queue {
+  id                String          @id @default(uuid())
+  branchId          String
+  branch            Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  serviceId         String
+  service           Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  date              DateTime        @db.Date
+  status            QueueStatusEnum @default(ACTIVE)
+  totalTokens       Int             @default(0)
+  currentServingSeq Int             @default(0)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  tickets           Token[]
+
+  @@unique([branchId, serviceId, date])
+  @@index([branchId, date])
+  @@index([serviceId, date])
+  @@index([branchId, date, status])
+  @@map("queues")
+}
+
+model Token {
+  id            String            @id @default(uuid())
+  tokenNumber   String            // e.g. "CARD-101"
+  seqNumber     Int               // e.g. 101
+  priority      PriorityLevelEnum @default(NORMAL)
+  status        TokenStatusEnum   @default(WAITING)
+
+  queueId       String
+  queue         Queue             @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  serviceId     String
+  service       Service           @relation(fields: [serviceId], references: [id])
+
+  counterId     String?
+  counter       Counter?          @relation(fields: [counterId], references: [id], onDelete: SetNull)
+
+  customerId    String?
+  customer      User?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  customerName  String?
+  customerPhone String?
+  notes         String?
+
+  estimatedTime DateTime?
+  calledAt      DateTime?
+  servedAt      DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  logs          TokenLog[]
+  notifications Notification[]
+
+  @@index([queueId, status, priority, seqNumber])
+  @@index([customerId, status])
+  @@index([serviceId, status])
+  @@map("tokens")
+}
+
+model TokenLog {
+  id             String           @id @default(uuid())
+  tokenId        String
+  token          Token            @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  previousStatus TokenStatusEnum?
+  newStatus      TokenStatusEnum
+  changedBy      String?          // User ID or Staff ID triggering change
+  performedById  String?          // Audit fallback field
+  note           String?
+  remarks        String?
+
+  timestamp      DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+
+  @@index([tokenId])
+  @@map("token_logs")
+}
+
+model Notification {
+  id        String                 @id @default(uuid())
+  tokenId   String
+  token     Token                  @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  channel   NotificationChannelEnum @default(SMS)
+  recipient String
+  message   String
+  status    NotificationStatusEnum @default(PENDING)
+  sentAt    DateTime?
+  error     String?
+
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([status, createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id             String        @id @default(uuid())
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  branchId       String?
+  branch         Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  action         String        // e.g. "CREATE_SERVICE", "UPDATE_COUNTER_STATUS"
+  resource       String        // e.g. "Service", "Counter"
+  resourceId     String?
+  details        String?       // JSON metadata representation
+  ipAddress      String?
+  userAgent      String?
+
+  createdAt      DateTime      @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+model DailyReportSummary {
+  id                 String   @id @default(uuid())
+  branchId           String
+  branch             Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  serviceId          String?
+  date               DateTime @db.Date
+
+  totalIssued        Int      @default(0)
+  totalCompleted     Int      @default(0)
+  totalCancelled     Int      @default(0)
+  totalNoShow        Int      @default(0)
+
+  avgWaitTimeMins    Float    @default(0)
+  avgServiceTimeMins Float    @default(0)
+
+  createdAt          DateTime @default(now())
+
+  @@unique([branchId, serviceId, date])
+  @@index([branchId, date])
+  @@map("daily_report_summaries")
+}
