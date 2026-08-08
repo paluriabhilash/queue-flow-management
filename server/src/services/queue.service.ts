@@ -285,6 +285,26 @@ export class QueueService {
     }
     return displayData;
   }
+
+  async deleteToken(tokenId: string, currentUser?: JwtPayload) {
+    const token = await this.repo.findTokenById(tokenId);
+    if (!token) {
+      throw ApiError.notFound('Token not found');
+    }
+
+    if (currentUser && currentUser.role === 'CUSTOMER' && token.customerId !== currentUser.userId) {
+      throw ApiError.forbidden('You can only delete your own ticket tokens');
+    }
+
+    const deletedToken = await this.repo.deleteToken(tokenId);
+
+    emitQueueEvent(SOCKET_EVENTS.QUEUE_TOKEN_DELETED, { id: tokenId }, {
+      branchId: token.queue.branchId,
+      serviceId: token.serviceId,
+    });
+
+    return deletedToken;
+  }
 }
 
 export const queueService = new QueueService();

@@ -50,3 +50,35 @@ export const useCancelToken = () => {
     },
   });
 };
+
+export const useStartService = () => {
+  const queryClient = useQueryClient();
+  return useMutation<TicketTokenItem, Error, string>({
+    mutationFn: (tokenId) => queueApiService.startService(tokenId),
+    onSuccess: (_, tokenId) => {
+      queryClient.invalidateQueries({ queryKey: queueKeys.position(tokenId) });
+      queryClient.invalidateQueries({ queryKey: queueKeys.myTokens() });
+    },
+  });
+};
+
+export const useCompleteService = () => {
+  const queryClient = useQueryClient();
+  return useMutation<TicketTokenItem, Error, string>({
+    mutationFn: (tokenId) => queueApiService.completeService(tokenId),
+    onSuccess: (_, tokenId) => {
+      queryClient.invalidateQueries({ queryKey: queueKeys.position(tokenId) });
+      queryClient.invalidateQueries({ queryKey: queueKeys.myTokens() });
+    },
+  });
+};
+
+export const useDeleteToken = () => {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (tokenId) => queueApiService.deleteToken(tokenId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queueKeys.all });
+    },
+  });
+};

@@ -187,13 +187,50 @@ export class QueueRepository {
     });
   }
 
+  async autoCompleteExpiredTokens(queueId?: string) {
+    try {
+      const now = new Date();
+      const candidateTokens = await prisma.token.findMany({
+        where: {
+          ...(queueId ? { queueId } : {}),
+          status: { in: [TokenStatusEnum.WAITING, TokenStatusEnum.CALLED, TokenStatusEnum.SERVING] },
+        },
+        include: { service: true },
+      });
+
+      const expiredTokenIds: string[] = [];
+
+      for (const t of candidateTokens) {
+        const startTime = new Date(t.createdAt).getTime();
+        const rawEst = (t as any).estimatedTime;
+        const waitMins: number = typeof rawEst === 'number' ? rawEst : 1;
+        const waitMs: number = waitMins * 60 * 1000;
+        const callWindowMs = 12 * 1000;
+        const serviceWindowMs = Math.max(25 * 1000, (t.service?.avgServiceTimeMins || 1) * 60 * 1000);
+        const totalCompletionTimeMs = startTime + waitMs + callWindowMs + serviceWindowMs;
+
+        if (now.getTime() >= totalCompletionTimeMs) {
+          expiredTokenIds.push(t.id);
+        }
+      }
+
+      if (expiredTokenIds.length > 0) {
+        await prisma.token.updateMany({
+          where: { id: { in: expiredTokenIds } },
+          data: { status: TokenStatusEnum.COMPLETED, completedAt: now },
+        });
+      }
+    } catch (error) {
+      console.error('Error auto-completing expired tokens:', error);
+    }
+  }
+
   async findActiveTokensByCustomer(customerId: string) {
-    const activeTokens = await prisma.token.findMany({
+    await this.autoCompleteExpiredTokens();
+
+    const customerTokens = await prisma.token.findMany({
       where: {
         customerId,
-        status: {
-          in: [TokenStatusEnum.WAITING, TokenStatusEnum.CALLED, TokenStatusEnum.SERVING],
-        },
       },
       include: {
         service: true,
@@ -205,30 +242,43 @@ export class QueueRepository {
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     });
 
     // Enhance each token with position and estimated wait time
     const result = [];
-    for (const token of activeTokens) {
-      const positionInfo = await this.calculateQueuePosition(token.id);
-      result.push({
-        ...token,
-        queuePosition: positionInfo.queuePosition,
-        queueAheadCount: positionInfo.queueAheadCount,
-        estimatedWaitTime: positionInfo.estimatedWaitTime,
-      });
+    for (const token of customerTokens) {
+      if (token.status === TokenStatusEnum.WAITING) {
+        const positionInfo = await this.calculateQueuePosition(token.id);
+        result.push({
+          ...token,
+          queuePosition: positionInfo.queuePosition,
+          queueAheadCount: positionInfo.queueAheadCount,
+          estimatedWaitTime: positionInfo.estimatedWaitTime,
+        });
+      } else {
+        result.push({
+          ...token,
+          queuePosition: 0,
+          queueAheadCount: 0,
+          estimatedWaitTime: 0,
+        });
+      }
     }
 
     return result;
   }
 
   async calculateQueuePosition(tokenId: string) {
-    const token = await this.findTokenById(tokenId);
-    if (!token) {
+    const initialToken = await this.findTokenById(tokenId);
+    if (!initialToken) {
       return { queuePosition: 0, queueAheadCount: 0, estimatedWaitTime: 0 };
     }
 
-    if (token.status !== TokenStatusEnum.WAITING) {
+    await this.autoCompleteExpiredTokens(initialToken.queueId);
+
+    const token = await this.findTokenById(tokenId);
+    if (!token || token.status !== TokenStatusEnum.WAITING) {
       return {
         queuePosition: 0,
         queueAheadCount: 0,
@@ -259,7 +309,22 @@ export class QueueRepository {
 
     const avgDuration = token.service?.avgServiceTimeMins || 10;
     const queuePosition = queueAheadCount + 1;
-    const estimatedWaitTime = queuePosition * avgDuration;
+
+    // Count open/active counters serving this service for this branch to calculate throughput
+    const activeCountersCount = await prisma.counterService.count({
+      where: {
+        serviceId: token.serviceId,
+        counter: {
+          branchId: token.queue.branchId,
+          status: 'OPEN',
+          isActive: true,
+        },
+      },
+    });
+
+    const effectiveCounters = Math.max(1, activeCountersCount);
+    // Estimated wait time in minutes = (queueAheadCount * avgDuration) / effectiveCounters (min 1 min if waiting)
+    const estimatedWaitTime = Math.max(1, Math.ceil((queueAheadCount * avgDuration) / effectiveCounters));
 
     return {
       queuePosition,
@@ -548,6 +613,12 @@ export class QueueRepository {
       currentlyServing,
       nextWaiting,
     };
+  }
+
+  async deleteToken(tokenId: string) {
+    return prisma.token.delete({
+      where: { id: tokenId },
+    });
   }
 }
 

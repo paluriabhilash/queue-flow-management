@@ -5,6 +5,7 @@ export const SOCKET_EVENTS = {
   QUEUE_TOKEN_COMPLETED: 'queue:token-completed',
   QUEUE_TOKEN_SKIPPED: 'queue:token-skipped',
   QUEUE_TOKEN_CANCELLED: 'queue:token-cancelled',
+  QUEUE_TOKEN_DELETED: 'queue:token-deleted',
   QUEUE_UPDATE: 'queue:update',
 } as const;
 

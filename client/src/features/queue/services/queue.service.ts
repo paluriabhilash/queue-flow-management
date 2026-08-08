@@ -26,4 +26,18 @@ export const queueApiService = {
     const response = await api.post<ApiSuccessResponse<TicketTokenItem>>(`/queue/${tokenId}/cancel`);
     return response.data.data;
   },
+
+  startService: async (tokenId: string): Promise<TicketTokenItem> => {
+    const response = await api.post<ApiSuccessResponse<TicketTokenItem>>(`/queue/${tokenId}/start`);
+    return response.data.data;
+  },
+
+  completeService: async (tokenId: string): Promise<TicketTokenItem> => {
+    const response = await api.post<ApiSuccessResponse<TicketTokenItem>>(`/queue/${tokenId}/complete`);
+    return response.data.data;
+  },
+
+  deleteToken: async (tokenId: string): Promise<void> => {
+    await api.delete(`/queue/${tokenId}`);
+  },
 };

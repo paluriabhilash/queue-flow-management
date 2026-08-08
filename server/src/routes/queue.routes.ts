@@ -93,6 +93,14 @@ router.post(
   queueController.cancelToken
 );
 
+// Delete Token Ticket (COMPLETED/CANCELLED/SKIPPED or Customer cleanup)
+router.delete(
+  '/:tokenId',
+  authenticate,
+  validateRequest(tokenIdSchema),
+  queueController.deleteToken
+);
+
 // Public Branch Display Board Data
 router.get(
   '/display/:branchId',

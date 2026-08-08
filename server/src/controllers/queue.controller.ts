@@ -59,6 +59,11 @@ export class QueueController {
     const result = await this.service.getBranchDisplayBoardData(req.params.branchId);
     return sendResponse(res, 200, 'Branch display board retrieved successfully', result);
   });
+
+  deleteToken = asyncHandler(async (req: Request, res: Response) => {
+    const result = await this.service.deleteToken(req.params.tokenId, req.user);
+    return sendResponse(res, 200, 'Token ticket deleted successfully', result);
+  });
 }
 
 export const queueController = new QueueController();
